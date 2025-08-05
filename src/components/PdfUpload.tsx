@@ -1,10 +1,18 @@
 import React, { useState, useRef } from 'react';
 import { FileText, Upload, Loader2 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
 import { TextSource } from '../types';
 
-// Set worker source
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Dynamic import for PDF.js to avoid build issues
+const loadPdfJs = async () => {
+  const pdfjsLib = await import('pdfjs-dist');
+  
+  // Set worker source using a more reliable approach
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+  }
+  
+  return pdfjsLib;
+};
 
 interface PdfUploadProps {
   onTextExtracted: (source: TextSource) => void;
@@ -14,24 +22,47 @@ interface PdfUploadProps {
 export const PdfUpload: React.FC<PdfUploadProps> = ({ onTextExtracted, isActive }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    
-    let fullText = '';
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
-      fullText += pageText + '\n\n';
+    try {
+      const pdfjsLib = await loadPdfJs();
+      const arrayBuffer = await file.arrayBuffer();
+      
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        useSystemFonts: true,
+      });
+      
+      const pdf = await loadingTask.promise;
+      let fullText = '';
+      const totalPages = pdf.numPages;
+      
+      for (let i = 1; i <= totalPages; i++) {
+        setProgress(Math.round((i / totalPages) * 100));
+        
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Extract text with better formatting
+        const pageText = textContent.items
+          .filter((item: any) => item.str && item.str.trim())
+          .map((item: any) => item.str.trim())
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        if (pageText) {
+          fullText += pageText + '\n\n';
+        }
+      }
+      
+      return fullText.trim();
+    } catch (error) {
+      console.error('PDF extraction error:', error);
+      throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-    
-    return fullText.trim();
   };
 
   const handleFile = async (file: File) => {
@@ -40,11 +71,22 @@ export const PdfUpload: React.FC<PdfUploadProps> = ({ onTextExtracted, isActive 
       return;
     }
 
+    if (file.size > 50 * 1024 * 1024) { // 50MB limit
+      alert('File size too large. Please select a PDF file smaller than 50MB.');
+      return;
+    }
+
     setIsProcessing(true);
+    setProgress(0);
     
     try {
       const extractedText = await extractTextFromPdf(file);
       
+      if (!extractedText || extractedText.trim().length === 0) {
+        alert('No text found in the PDF. The file might contain only images or be password-protected.');
+        return;
+      }
+
       const source: TextSource = {
         id: `pdf-${Date.now()}`,
         type: 'pdf',
@@ -56,9 +98,10 @@ export const PdfUpload: React.FC<PdfUploadProps> = ({ onTextExtracted, isActive 
       onTextExtracted(source);
     } catch (error) {
       console.error('Error processing PDF:', error);
-      alert('Failed to process PDF. Please try another file.');
+      alert(error instanceof Error ? error.message : 'Failed to process PDF. Please try another file.');
     } finally {
       setIsProcessing(false);
+      setProgress(0);
     }
   };
 
@@ -114,7 +157,15 @@ export const PdfUpload: React.FC<PdfUploadProps> = ({ onTextExtracted, isActive 
           {isProcessing ? (
             <div className="space-y-3">
               <Loader2 className="w-8 h-8 text-teal-600 mx-auto animate-spin" />
-              <p className="text-gray-600">Processing PDF...</p>
+              <p className="text-gray-600">
+                Processing PDF... {progress}%
+              </p>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-teal-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -132,7 +183,7 @@ export const PdfUpload: React.FC<PdfUploadProps> = ({ onTextExtracted, isActive 
                 </button>
               </div>
               <p className="text-sm text-gray-500">
-                Supports PDF files up to 10MB
+                Supports PDF files up to 50MB
               </p>
             </div>
           )}

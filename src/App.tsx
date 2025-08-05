@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Headphones } from 'lucide-react';
+import { Headphones, ArrowLeft } from 'lucide-react';
 import { Header } from './components/Header';
 import { TextInput } from './components/TextInput';
 import { PdfUpload } from './components/PdfUpload';
@@ -15,6 +15,7 @@ function App() {
   const [currentSource, setCurrentSource] = useState<TextSource | null>(null);
   const [recentSources, setRecentSources] = useState<TextSource[]>([]);
   const [activeInput, setActiveInput] = useState<'manual' | 'pdf' | 'image'>('manual');
+  const [currentView, setCurrentView] = useState<'home' | 'reading'>('home');
   
   const {
     isPlaying,
@@ -39,12 +40,16 @@ function App() {
     setCurrentSource(source);
     setRecentSources(storage.getSources());
     
+    // Switch to reading view
+    setCurrentView('reading');
+    
     // Auto-start reading
     speak(source.content);
   };
 
   const handleSourceSelect = (source: TextSource) => {
     setCurrentSource(source);
+    setCurrentView('reading');
     
     // Load saved progress
     const progress = storage.getProgress(source.id);
@@ -60,6 +65,7 @@ function App() {
     if (currentSource?.id === id) {
       setCurrentSource(null);
       stop();
+      setCurrentView('home');
     }
   };
 
@@ -97,6 +103,10 @@ function App() {
     }
   };
 
+  const handleBackToHome = () => {
+    setCurrentView('home');
+  };
+
   // Save progress periodically
   useEffect(() => {
     if (currentSource && isPlaying) {
@@ -112,117 +122,140 @@ function App() {
     }
   }, [currentSource, isPlaying, currentPosition]);
 
+  // Home View
+  const renderHomeView = () => (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Input Methods */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setActiveInput('manual')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                activeInput === 'manual'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Manual Input
+            </button>
+            <button
+              onClick={() => setActiveInput('pdf')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                activeInput === 'pdf'
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              PDF Upload
+            </button>
+            <button
+              onClick={() => setActiveInput('image')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                activeInput === 'image'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Image OCR
+            </button>
+          </div>
+
+          {activeInput === 'manual' && (
+            <TextInput 
+              onTextSubmit={handleTextSubmit} 
+              isActive={activeInput === 'manual'}
+            />
+          )}
+          
+          {activeInput === 'pdf' && (
+            <PdfUpload 
+              onTextExtracted={handleTextSubmit} 
+              isActive={activeInput === 'pdf'}
+            />
+          )}
+          
+          {activeInput === 'image' && (
+            <ImageOcr 
+              onTextExtracted={handleTextSubmit} 
+              isActive={activeInput === 'image'}
+            />
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          <RecentSources
+            sources={recentSources}
+            onSourceSelect={handleSourceSelect}
+            onSourceDelete={handleSourceDelete}
+          />
+        </div>
+      </div>
+
+      {recentSources.length === 0 && (
+        <div className="text-center py-12">
+          <div className="max-w-md mx-auto">
+            <Headphones className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-semibold text-gray-800 mb-2">
+              Welcome to Readion
+            </h2>
+            <p className="text-gray-600">
+              Choose an input method above to start converting text to speech. 
+              Your files and settings are stored locally for privacy.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Reading View
+  const renderReadingView = () => (
+    <div className="py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
+        <button 
+          onClick={handleBackToHome}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Home
+        </button>
+      </div>
+      
+      {currentSource && (
+        <TextViewer
+          source={currentSource}
+          currentPosition={currentPosition}
+          onPositionClick={handlePositionClick}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Input Methods */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setActiveInput('manual')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                  activeInput === 'manual'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Manual Input
-              </button>
-              <button
-                onClick={() => setActiveInput('pdf')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                  activeInput === 'pdf'
-                    ? 'bg-teal-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                PDF Upload
-              </button>
-              <button
-                onClick={() => setActiveInput('image')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                  activeInput === 'image'
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Image OCR
-              </button>
-            </div>
-
-            {activeInput === 'manual' && (
-              <TextInput 
-                onTextSubmit={handleTextSubmit} 
-                isActive={activeInput === 'manual'}
-              />
-            )}
-            
-            {activeInput === 'pdf' && (
-              <PdfUpload 
-                onTextExtracted={handleTextSubmit} 
-                isActive={activeInput === 'pdf'}
-              />
-            )}
-            
-            {activeInput === 'image' && (
-              <ImageOcr 
-                onTextExtracted={handleTextSubmit} 
-                isActive={activeInput === 'image'}
-              />
-            )}
-
-            {currentSource && (
-              <TextViewer
-                source={currentSource}
-                currentPosition={currentPosition}
-                onPositionClick={handlePositionClick}
-              />
-            )}
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {currentSource && (
-              <AudioControls
-                isPlaying={isPlaying}
-                isPaused={isPaused}
-                settings={settings}
-                voices={voices}
-                onPlay={handlePlay}
-                onPause={pause}
-                onStop={stop}
-                onSkipBack={handleSkipBack}
-                onSkipForward={handleSkipForward}
-                onSettingsChange={updateSettings}
-              />
-            )}
-
-            <RecentSources
-              sources={recentSources}
-              onSourceSelect={handleSourceSelect}
-              onSourceDelete={handleSourceDelete}
-            />
-          </div>
-        </div>
-
-        {!currentSource && (
-          <div className="text-center py-12">
-            <div className="max-w-md mx-auto">
-              <Headphones className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-semibold text-gray-800 mb-2">
-                Welcome to Readion
-              </h2>
-              <p className="text-gray-600">
-                Choose an input method above to start converting text to speech. 
-                Your files and settings are stored locally for privacy.
-              </p>
-            </div>
-          </div>
-        )}
+      <main className="transition-all duration-300 ease-in-out">
+        {currentView === 'home' ? renderHomeView() : renderReadingView()}
       </main>
+
+      {/* Sticky Audio Controls - Only show when there's a current source */}
+      {currentSource && (
+        <AudioControls
+          isPlaying={isPlaying}
+          isPaused={isPaused}
+          settings={settings}
+          voices={voices}
+          onPlay={handlePlay}
+          onPause={pause}
+          onStop={stop}
+          onSkipBack={handleSkipBack}
+          onSkipForward={handleSkipForward}
+          onSettingsChange={updateSettings}
+        />
+      )}
     </div>
   );
 }
